@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0d14">
+<title>TV-fjärr</title>
+<style>
+:root {
+    --bg: #0b0d14; --panel: #151926; --panel2: #1d2234; --fg: #f4f5f7; --muted: rgba(244,245,247,0.55);
+    --accent: #7dc3ff; --ok: #4ade80; --bad: #f87171;
+    --a: #e03a3a; --b: #2f6fe0; --c: #e0a52f; --d: #35b36b;
+    color-scheme: dark;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 17px/1.35 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overscroll-behavior: none; }
+body { display: flex; flex-direction: column; padding: env(safe-area-inset-top, 0) max(14px, env(safe-area-inset-right, 0)) max(14px, env(safe-area-inset-bottom, 0)) max(14px, env(safe-area-inset-left, 0)); user-select: none; -webkit-user-select: none; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 14px 2px 10px; }
+h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.2px; }
+.status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #666; }
+.dot.on { background: var(--ok); } .dot.wait { background: #e0a52f; }
+.tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.tab { flex: 1; padding: 11px 0; border-radius: 14px; background: var(--panel); text-align: center; font-weight: 600; color: var(--muted); }
+.tab.on { background: var(--fg); color: var(--bg); }
+section { display: none; flex: 1; flex-direction: column; gap: 12px; }
+section.on { display: flex; }
+.pad { flex: 1; min-height: 220px; border-radius: 22px; background: var(--panel); position: relative; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 15px; text-align: center; padding: 20px; }
+.pad .hint { max-width: 220px; }
+.pad.flash { background: var(--panel2); }
+.row { display: flex; gap: 10px; }
+.btn { flex: 1; padding: 16px 0; border-radius: 16px; background: var(--panel); text-align: center; font-size: 17px; font-weight: 600; border: 0; color: var(--fg); }
+.btn:active, .btn.down { background: var(--panel2); transform: scale(0.97); }
+.btn.big { padding: 20px 0; font-size: 19px; }
+.btn.accent { background: var(--accent); color: #06111c; }
+.dpad { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; gap: 8px; height: 230px; }
+.dpad .btn { padding: 0; font-size: 26px; display: flex; align-items: center; justify-content: center; }
+.dpad .ok { background: var(--accent); color: #06111c; font-size: 20px; border-radius: 50%; }
+.dpad .e { visibility: hidden; }
+.field { display: flex; gap: 8px; }
+input[type=text], input[type=url] { flex: 1; min-width: 0; padding: 14px 16px; border-radius: 14px; border: 0; background: var(--panel); color: var(--fg); font-size: 17px; outline: none; }
+input::placeholder { color: var(--muted); }
+.small { font-size: 13px; color: var(--muted); text-align: center; }
+.game { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+.card { border-radius: 20px; background: var(--panel); padding: 18px; }
+.card h2 { margin: 0 0 6px; font-size: 18px; }
+.card p { margin: 0; color: var(--muted); }
+.answers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; flex: 1; }
+.answers .btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 120px; font-size: 16px; padding: 12px; color: #fff; }
+.answers .btn .letter { font-size: 30px; font-weight: 800; }
+.answers .btn.a { background: var(--a); } .answers .btn.b { background: var(--b); } .answers .btn.c { background: var(--c); } .answers .btn.d { background: var(--d); }
+.answers .btn.dim { opacity: 0.35; }
+.players { display: flex; flex-direction: column; gap: 10px; }
+.players .btn { padding: 18px 0; }
+.players .btn.dim { opacity: 0.35; }
+.result { font-size: 40px; font-weight: 800; text-align: center; padding: 30px 0; }
+.result.ok { color: var(--ok); } .result.bad { color: var(--bad); }
+.board { display: flex; flex-direction: column; gap: 8px; }
+.board div { display: flex; justify-content: space-between; padding: 12px 16px; border-radius: 12px; background: var(--panel); }
+.board div.me { background: var(--panel2); font-weight: 700; }
+.name-row { display: flex; gap: 8px; }
+.err { background: #3a1212; color: #ffd0d0; border-radius: 14px; padding: 14px; }
+</style>
+</head>
+<body>
+<header>
+    <h1>TV-fjärr</h1>
+    <div class="status"><span id="dot" class="dot"></span><span id="status">Ansluter…</span></div>
+</header>
+
+<div id="noid" class="err" style="display:none">Öppna den här sidan genom att skanna QR-koden på TV:n (rutan Mobil), så vet mobilen vilken TV den ska styra.</div>
+
+<div class="tabs" id="tabs">
+    <div class="tab on" data-tab="remote">Fjärr</div>
+    <div class="tab" data-tab="type">Skriv</div>
+    <div class="tab" data-tab="game">Spel</div>
+</div>
+
+<section id="remote" class="on">
+    <div class="pad" id="pad"><div class="hint">Svep för att navigera, tryck för OK</div></div>
+    <div class="dpad">
+        <button class="btn e"></button><button class="btn" data-key="up">▲</button><button class="btn e"></button>
+        <button class="btn" data-key="left">◀</button><button class="btn ok" data-key="ok">OK</button><button class="btn" data-key="right">▶</button>
+        <button class="btn e"></button><button class="btn" data-key="down">▼</button><button class="btn e"></button>
+    </div>
+    <div class="row">
+        <button class="btn" data-key="back">Tillbaka</button>
+        <button class="btn" data-key="home">Hem</button>
+        <button class="btn" data-key="yellow" title="Gul knapp">●</button>
+    </div>
+</section>
+
+<section id="type">
+    <div class="card"><h2>Skriv på TV:n</h2><p>Texten skickas till det TV:n väntar på, till exempel en fråga i Fråga TV:n.</p></div>
+    <form class="field" id="textform"><input type="text" id="text" placeholder="Skriv här…" autocomplete="off"><button class="btn accent" type="submit" style="flex:0 0 auto;padding:0 20px">Skicka</button></form>
+    <div class="card"><h2>Öppna en YouTube-länk</h2><p>Klistra in en länk, så spelas den upp på TV:n.</p></div>
+    <form class="field" id="urlform"><input type="url" id="url" placeholder="https://youtu.be/…" autocomplete="off"><button class="btn accent" type="submit" style="flex:0 0 auto;padding:0 20px">Öppna</button></form>
+</section>
+
+<section id="game">
+    <div class="game" id="gamebox"></div>
+</section>
+
+<script>
+/* ---- MqttLite: the same tiny MQTT-over-WebSocket client as on the TV ---- */
+(function (root) {
+    'use strict';
+    var KEEPALIVE_S = 30;
+    function utf8(str) { return new TextEncoder().encode(str); }
+    function fromUtf8(bytes) { return new TextDecoder().decode(bytes); }
+    function lenPrefixed(str) { var b = utf8(str); var out = new Uint8Array(b.length + 2); out[0] = b.length >> 8; out[1] = b.length & 255; out.set(b, 2); return out; }
+    function concat(parts) { var n = 0; parts.forEach(function (p) { n += p.length; }); var out = new Uint8Array(n); var at = 0; parts.forEach(function (p) { out.set(p, at); at += p.length; }); return out; }
+    function packet(type, body) { var len = body.length; var header = [type]; do { var digit = len % 128; len = Math.floor(len / 128); header.push(len > 0 ? digit | 128 : digit); } while (len > 0); return concat([new Uint8Array(header), body]); }
+    function connectPacket(clientId) { return packet(0x10, concat([lenPrefixed('MQTT'), new Uint8Array([4, 2, KEEPALIVE_S >> 8, KEEPALIVE_S & 255]), lenPrefixed(clientId)])); }
+    function subscribePacket(id, topic) { return packet(0x82, concat([new Uint8Array([id >> 8, id & 255]), lenPrefixed(topic), new Uint8Array([0])])); }
+    function publishPacket(topic, text) { return packet(0x30, concat([lenPrefixed(topic), utf8(text)])); }
+    function connect(opts) {
+        var urls = opts.urls.slice(); var ws = null; var buf = new Uint8Array(0); var subs = {}; var packetId = 1; var pingTimer = null; var retry = 0; var closed = false; var urlIndex = 0; var state = 'connecting';
+        var clientId = 'arn0-' + Math.random().toString(36).slice(2, 12);
+        function setState(s) { if (s === state) return; state = s; if (opts.onState) opts.onState(s); }
+        function send(bytes) { if (ws && ws.readyState === 1) ws.send(bytes); }
+        function open() {
+            if (closed) return; setState('connecting'); var url = urls[urlIndex % urls.length];
+            try { ws = new WebSocket(url, 'mqtt'); } catch (e) { scheduleReconnect(); return; }
+            ws.binaryType = 'arraybuffer'; var mine = ws;
+            ws.onopen = function () { buf = new Uint8Array(0); mine.send(connectPacket(clientId)); };
+            ws.onmessage = function (ev) { if (mine !== ws) return; buf = concat([buf, new Uint8Array(ev.data)]); parse(); };
+            ws.onerror = function () {};
+            ws.onclose = function () { if (mine !== ws) return; clearInterval(pingTimer); if (closed) return; setState('offline'); scheduleReconnect(); };
+        }
+        function scheduleReconnect() { retry++; if (retry % 3 === 0) urlIndex++; setTimeout(open, Math.min(15000, 1000 * Math.pow(1.7, Math.min(retry, 6)))); }
+        function onConnected() { retry = 0; setState('connected'); Object.keys(subs).forEach(function (t) { send(subscribePacket(packetId++ % 65535 + 1, t)); }); clearInterval(pingTimer); pingTimer = setInterval(function () { send(new Uint8Array([0xC0, 0])); }, (KEEPALIVE_S - 5) * 1000); }
+        function parse() {
+            while (buf.length >= 2) {
+                var type = buf[0] >> 4; var len = 0; var mult = 1; var i = 1; var digit;
+                do { if (i >= buf.length) return; digit = buf[i++]; len += (digit & 127) * mult; mult *= 128; } while (digit & 128);
+                if (buf.length < i + len) return;
+                var body = buf.subarray(i, i + len); buf = buf.subarray(i + len);
+                if (type === 2) { if (body[1] === 0) onConnected(); else { closed = true; setState('offline'); } }
+                else if (type === 3) { var tlen = (body[0] << 8) | body[1]; var topic = fromUtf8(body.subarray(2, 2 + tlen)); var text = fromUtf8(body.subarray(2 + tlen)); if (opts.onMessage) opts.onMessage(topic, text); }
+            }
+        }
+        open();
+        return {
+            subscribe: function (topic) { subs[topic] = true; if (state === 'connected') send(subscribePacket(packetId++ % 65535 + 1, topic)); },
+            publish: function (topic, text) { if (state !== 'connected') return false; send(publishPacket(topic, text)); return true; },
+            state: function () { return state; },
+            close: function () { closed = true; clearInterval(pingTimer); if (ws) { try { ws.send(new Uint8Array([0xE0, 0])); } catch (e) {} ws.close(); } }
+        };
+    }
+    root.MqttLite = { connect: connect };
+})(window);
+
+/* ---- The remote ---- */
+(function () {
+    'use strict';
+    var BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+    var params = new URLSearchParams(location.search);
+    var tv = (location.hash || '').replace('#', '').replace(/[^a-z0-9]/gi, '');
+    var brokers = params.get('broker') ? [params.get('broker')] : BROKERS;
+    var $ = function (id) { return document.getElementById(id); };
+    var me = null;
+    try { me = localStorage.getItem('tvremote.me'); } catch (e) {}
+    if (!me) { me = 'p' + Math.random().toString(36).slice(2, 10); try { localStorage.setItem('tvremote.me', me); } catch (e) {} }
+    var name = '';
+    try { name = localStorage.getItem('tvremote.name') || ''; } catch (e) {}
+    var client = null;
+    var game = { g: 'idle' };
+    var joined = false;
+    var picked = null;
+
+    function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms || 12); } catch (e) {} }
+
+    function send(msg) {
+        msg.c = me;
+        if (name) msg.name = name;
+        if (!client || !client.publish('arn0/' + tv + '/up', JSON.stringify(msg))) {
+            setStatus('offline');
+            return false;
+        }
+        return true;
+    }
+
+    function setStatus(s) {
+        var dot = $('dot');
+        dot.className = 'dot ' + (s === 'connected' ? 'on' : s === 'connecting' ? 'wait' : '');
+        $('status').textContent = s === 'connected' ? 'Ansluten till TV:n' : s === 'connecting' ? 'Ansluter…' : 'Ingen kontakt, försöker igen';
+    }
+
+    if (!tv) {
+        $('noid').style.display = 'block';
+        $('status').textContent = 'Ingen TV vald';
+    } else {
+        client = MqttLite.connect({
+            urls: brokers,
+            onMessage: function (t, text) { try { onTv(JSON.parse(text)); } catch (e) {} },
+            onState: function (s) {
+                setStatus(s);
+                if (s === 'connected') send({ t: 'hello' });
+            }
+        });
+        client.subscribe('arn0/' + tv + '/down');
+    }
+
+    // Tabs
+    document.querySelectorAll('.tab').forEach(function (tab) {
+        tab.addEventListener('click', function () {
+            document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('on', t === tab); });
+            document.querySelectorAll('section').forEach(function (s) { s.classList.toggle('on', s.id === tab.getAttribute('data-tab')); });
+            if (tab.getAttribute('data-tab') === 'game') renderGame();
+        });
+    });
+
+    // Keys
+    function key(k) { buzz(); send({ t: 'key', k: k }); }
+    document.querySelectorAll('[data-key]').forEach(function (b) {
+        b.addEventListener('click', function () { key(b.getAttribute('data-key')); });
+    });
+
+    // The touchpad: swipes and taps. A held swipe repeats, like a held key on the remote.
+    var pad = $('pad');
+    var touch = null;
+    var repeatTimer = null;
+    pad.addEventListener('touchstart', function (e) {
+        var t = e.touches[0];
+        touch = { x: t.clientX, y: t.clientY, at: Date.now(), moved: false };
+        pad.classList.add('flash');
+    }, { passive: true });
+    pad.addEventListener('touchmove', function (e) {
+        if (!touch) return;
+        var t = e.touches[0];
+        var dx = t.clientX - touch.x;
+        var dy = t.clientY - touch.y;
+        if (Math.abs(dx) < 40 && Math.abs(dy) < 40) return;
+        var k = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+        key(k);
+        touch.moved = true;
+        touch.x = t.clientX;
+        touch.y = t.clientY;
+        // Keep going in the same direction while the finger stays out at the edge of the swipe.
+        clearTimeout(repeatTimer);
+        repeatTimer = setTimeout(function hold() {
+            if (!touch) return;
+            key(k);
+            repeatTimer = setTimeout(hold, 220);
+        }, 450);
+    }, { passive: true });
+    function endTouch() {
+        clearTimeout(repeatTimer);
+        pad.classList.remove('flash');
+        if (touch && !touch.moved && Date.now() - touch.at < 400) key('ok');
+        touch = null;
+    }
+    pad.addEventListener('touchend', endTouch);
+    pad.addEventListener('touchcancel', endTouch);
+    pad.addEventListener('click', function () { if (!('ontouchstart' in window)) key('ok'); });
+
+    // Text and links
+    $('textform').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var v = $('text').value.trim();
+        if (!v) return;
+        if (send({ t: 'text', v: v })) { $('text').value = ''; buzz(20); }
+    });
+    $('urlform').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var v = $('url').value.trim();
+        if (!v) return;
+        if (send({ t: 'url', v: v })) { $('url').value = ''; buzz(20); }
+    });
+
+    // ---- Game
+    function onTv(msg) {
+        if (!msg || !msg.t) return;
+        if (msg.t === 'game') {
+            if (msg.g !== game.g) picked = null;
+            game = msg;
+            if (msg.g === 'idle') joined = false;
+            if (joined || msg.g === 'lobby') renderGame();
+            if (msg.g === 'q' || msg.g === 'vote') buzz(30);
+        }
+    }
+
+    function el(tag, cls, text) {
+        var e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text !== undefined) e.textContent = text;
+        return e;
+    }
+
+    function renderGame() {
+        var box = $('gamebox');
+        box.innerHTML = '';
+        if (!tv) return;
+        if (game.g === 'idle' || !joined) {
+            var card = el('div', 'card');
+            card.appendChild(el('h2', '', game.g === 'idle' ? 'Inget spel igång' : 'Gå med i spelet'));
+            card.appendChild(el('p', '', game.g === 'idle' ? 'Öppna rutan Spel på TV:n, så dyker spelet upp här.' : 'Skriv ditt namn så är du med.'));
+            box.appendChild(card);
+            var row = el('div', 'name-row');
+            var input = el('input');
+            input.type = 'text';
+            input.placeholder = 'Ditt namn';
+            input.value = name;
+            input.maxLength = 14;
+            input.autocomplete = 'off';
+            var btn = el('button', 'btn accent', 'Gå med');
+            btn.style.flex = '0 0 auto';
+            btn.style.padding = '0 20px';
+            btn.addEventListener('click', function () {
+                var v = input.value.trim();
+                if (!v) { input.focus(); return; }
+                name = v;
+                try { localStorage.setItem('tvremote.name', name); } catch (e) {}
+                joined = true;
+                send({ t: 'join' });
+                buzz(20);
+                renderGame();
+            });
+            row.appendChild(input);
+            row.appendChild(btn);
+            box.appendChild(row);
+            return;
+        }
+        if (game.g === 'lobby') {
+            var c = el('div', 'card');
+            c.appendChild(el('h2', '', 'Du är med, ' + name + '!'));
+            c.appendChild(el('p', '', 'Vänta på att spelet startar på TV:n. Spelare: ' + (game.players || []).join(', ')));
+            box.appendChild(c);
+            return;
+        }
+        if (game.g === 'q') {
+            var q = el('div', 'card');
+            q.appendChild(el('h2', '', 'Fråga ' + game.n + ' av ' + game.total));
+            q.appendChild(el('p', '', picked === null ? 'Svara på mobilen, se frågan på TV:n.' : 'Svar skickat. Vänta på de andra…'));
+            box.appendChild(q);
+            var grid = el('div', 'answers');
+            ['a', 'b', 'c', 'd'].forEach(function (letter, i) {
+                var b = el('button', 'btn ' + letter + (picked !== null && picked !== i ? ' dim' : ''));
+                b.appendChild(el('div', 'letter', letter.toUpperCase()));
+                b.appendChild(el('div', '', (game.opts && game.opts[i]) || ''));
+                b.addEventListener('click', function () {
+                    if (picked !== null) return;
+                    picked = i;
+                    send({ t: 'answer', n: game.n, a: i });
+                    buzz(20);
+                    renderGame();
+                });
+                grid.appendChild(b);
+            });
+            box.appendChild(grid);
+            return;
+        }
+        if (game.g === 'reveal') {
+            var r = game.r && game.r[me];
+            var res = el('div', 'result ' + (r && r.ok ? 'ok' : 'bad'), r ? (r.ok ? 'Rätt! +' + r.pts : 'Fel') : 'Inget svar');
+            box.appendChild(res);
+            var c2 = el('div', 'card');
+            c2.appendChild(el('h2', '', 'Rätt svar: ' + ['A', 'B', 'C', 'D'][game.correct] + '. ' + (game.answer || '')));
+            c2.appendChild(el('p', '', r ? 'Dina poäng: ' + r.total : ''));
+            box.appendChild(c2);
+            return;
+        }
+        if (game.g === 'vote') {
+            var v = el('div', 'card');
+            v.appendChild(el('h2', '', 'Vem i rummet…'));
+            v.appendChild(el('p', '', game.prompt || ''));
+            box.appendChild(v);
+            var list = el('div', 'players');
+            (game.players || []).forEach(function (p) {
+                var b = el('button', 'btn' + (picked !== null && picked !== p.c ? ' dim' : ''), p.name);
+                b.addEventListener('click', function () {
+                    if (picked !== null) return;
+                    picked = p.c;
+                    send({ t: 'vote', n: game.n, who: p.c });
+                    buzz(20);
+                    renderGame();
+                });
+                list.appendChild(b);
+            });
+            box.appendChild(list);
+            return;
+        }
+        if (game.g === 'voted') {
+            var vc = el('div', 'card');
+            vc.appendChild(el('h2', '', 'Rösterna är räknade'));
+            vc.appendChild(el('p', '', 'Se resultatet på TV:n.'));
+            box.appendChild(vc);
+            return;
+        }
+        if (game.g === 'final') {
+            var f = el('div', 'card');
+            f.appendChild(el('h2', '', 'Slutresultat'));
+            box.appendChild(f);
+            var board = el('div', 'board');
+            (game.board || []).forEach(function (p, i) {
+                var row = el('div', p.c === me ? 'me' : '');
+                row.appendChild(el('span', '', (i + 1) + '. ' + p.name));
+                row.appendChild(el('span', '', String(p.pts)));
+                board.appendChild(row);
+            });
+            box.appendChild(board);
+            return;
+        }
+        var w = el('div', 'card');
+        w.appendChild(el('h2', '', 'Titta på TV:n'));
+        box.appendChild(w);
+    }
+
+    renderGame();
+    // Nudge the TV now and then, so it knows this phone is still here.
+    setInterval(function () { if (client && client.state() === 'connected') send({ t: 'ping' }); }, 60000);
+    // Keep the screen on while the page is open, where the phone allows it.
+    try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(function () {}); } catch (e) {}
+})();
+</script>
+</body>
+</html>
