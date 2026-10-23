@@ -278,7 +278,7 @@ input::placeholder { color: var(--muted); }
             if (msg.g !== game.g) picked = null;
             game = msg;
             if (msg.g === 'idle') joined = false;
-            if (joined || msg.g === 'lobby') renderGame();
+            renderGame();
             if (msg.g === 'q' || msg.g === 'vote') buzz(30);
         }
     }
