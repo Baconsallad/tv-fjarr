@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, height=1080">
+<meta name="referrer" content="origin">
+<title>Spacetoon klassiker</title>
+<style>
+    html, body { margin: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #player, #player iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+    /* A small channel bug in the corner, as on the real channel */
+    #bug { position: absolute; right: 60px; top: 46px; padding: 6px 16px; border-radius: 12px;
+        background: rgba(0,0,0,.35); color: #fff; font: 700 28px/1.2 sans-serif; opacity: .8;
+        pointer-events: none; }
+    #bug span { color: #ffcf2e; }
+</style>
+</head>
+<body>
+<div id="player"></div>
+<div id="bug">سبيس<span>تون</span></div>
+<script>
+/*
+ * Spacetoon klassiker: a channel made of the classic Spacetoon programmes (Arabic dub), with the
+ * old breaks, ads and theme songs between them. Played by Baker TV's 00's era (js/channels.js),
+ * which shows this page full screen; also works in any browser.
+ *
+ * Like a real channel it follows the clock: the day is cut into 30-minute slots, each slot is
+ * one programme (a break first, then an episode), so tuning in lands in the middle of whatever
+ * is on. Every programme moves on one episode per round, so the next time it comes up it is the
+ * next episode. Videos that cannot be played embedded are skipped.
+ */
+(function () {
+    'use strict';
+
+    // ---------- What is on
+
+    // Programmes: YouTube playlists of whole episodes. `start` spreads where each one begins.
+    var SHOWS = [
+        { title: 'كابتن ماجد', list: 'PLZ-CdRG36aUQ4iZuv-Ki8-GmD0-uBhV98' },
+        { title: 'كنوز سبيستون', list: 'PLbwI0LE0f2MGO87U3-5XbacbqNAhdb_r4' },
+        { title: 'المحقق كونان', list: 'PL4ZQiCmWXswO_fgbW7kaAJoYJ1t4ZUchI' },
+        { title: 'ريمي', list: 'PLiEGHJUBeUJaflH5YdFHP44UgOvPTFxjk' },
+        { title: 'القناص', list: 'PLy0ZmT-7d9aF48P3fHaf1EJeFjCKS77Bw' },
+        { title: 'عهد الأصدقاء', list: 'PLoEj-8oG7g5HVuk8cj0ZL8I3MkjUMJXGP' },
+        { title: 'سالي', list: 'PLPsPkIoTAZeM8y0AVP4PS4L3PUXcH4Eoq' },
+        { title: 'يوغي يو', list: 'PLcpYQYE9eUsx9HtnXvmcoYjudisGRU_c4' },
+        { title: 'كابتن ماجد', list: 'PLjScRGV7W88FI70LxhSY715TAVqstOYHa' },
+        { title: 'سلام دانك', list: 'PL9z6AeWZbf-Keg-vfOTnhBvFOXlOnDNg5' },
+        { title: 'حلقات سبيستون', list: 'PLuR9Rb485Olr2PvF-7n5GxsgfTVnn-S64' },
+        { title: 'دروب ريمي', list: 'PLW-MSW6Q2s9PKh9Q8StRjxPqoMQShn9ay' },
+        { title: 'سالي', list: 'PLyqrhAwN5OOcUp386EKuu1GXGF_mz0l6u' }
+    ];
+    // Breaks: the old bumpers, planet idents and ads. Long compilations are played a minute or
+    // two at a time from somewhere inside them.
+    var BREAKS = [
+        { id: 'PI7dv0hlxF4', len: 1800 },   // تجميعة لفواصل سبيستون القديمة ١
+        { id: 'cNpQjumSyc8', len: 1800 },   // تجميعة لفواصل سبيستون القديمة ٢
+        { id: 'nMXNmxoaMEo', len: 600 },    // جميع فواصل كواكب سبيستون القديمة
+        { id: '6Q4GHRawDAI', len: 300 },    // إعلانات سنة 2005
+        { id: 'Uilitw3w5z8', len: 300 },    // إعلانات سبيستون 2007
+        { id: '8-3smPQ1Wfc', len: 120 },    // سنعود بعد قليل - عدنا، كوكب كوميديا 2006
+        { id: '_IIlpl4QqXE', len: 120 },    // فواصل كوكب رياضة 2005
+        { id: 'W4vjCrD7zVc', len: 120 }     // إعلان قديم
+    ];
+    // Theme songs, now and then in a break.
+    var SONGS = 'PLtczRzSWYcWzBOiTX0KorwVYNvoS0VxcV';
+    var PLANETS = 'PLVC9J3Ez50EDbVyaFl8GR3mcETRaNew33';
+
+    var SLOT = 30 * 60;           // seconds per programme slot
+    var BREAK = 100;              // seconds of break at the top of a slot
+    var EPOCH = Date.UTC(2026, 0, 1) / 1000;
+
+    // ---------- The clock
+
+    function now() { return Date.now() / 1000; }
+    function slotOf(t) { return Math.floor((t - EPOCH) / SLOT); }
+    function slotStart(s) { return EPOCH + s * SLOT; }
+    // A steady shuffle, so neighbouring slots do not show the same programme.
+    function showOf(s) { return SHOWS[(s * 7) % SHOWS.length]; }
+    function episodeOf(s) { return Math.floor(s / SHOWS.length); }
+    function rnd(seed) {
+        var x = Math.sin(seed * 9301 + 49297) * 233280;
+        return x - Math.floor(x);
+    }
+
+    // ---------- Telling Baker TV what is on
+
+    function tell(title) {
+        try { parent.postMessage({ type: 'spacetoon', now: title }, '*'); } catch (e) { /* alone */ }
+    }
+
+    // ---------- Playing
+
+    var player = null;
+    var ready = false;
+    var lengths = {};             // playlist id -> number of videos
+    var current = null;           // { kind: 'show'|'break', slot, until, tries }
+    var fails = 0;
+    var watchdog = null;
+
+    try { lengths = JSON.parse(localStorage.getItem('st.lengths') || '{}'); } catch (e) { /* none */ }
+
+    function saveLengths() {
+        try { localStorage.setItem('st.lengths', JSON.stringify(lengths)); } catch (e) { /* none */ }
+    }
+
+    // What should be on right now, and from where.
+    function tuneToClock() {
+        var t = now();
+        var s = slotOf(t);
+        var into = t - slotStart(s);
+        if (into < BREAK) playBreak(s, BREAK - into);
+        else playShow(s, into - BREAK, 0);
+    }
+
+    function playShow(s, offset, tries) {
+        var show = showOf(s + tries * 3);
+        current = { kind: 'show', slot: s, tries: tries, list: show.list };
+        tell(show.title);
+        var n = lengths[show.list];
+        if (!n) {
+            // Learn the playlist's length first; the episode is picked once it is known.
+            current.cueing = { s: s, offset: offset };
+            player.cuePlaylist({ list: show.list, listType: 'playlist', index: 0 });
+            return;
+        }
+        var index = (episodeOf(s) + (show.list.charCodeAt(5) || 0)) % n;
+        player.loadPlaylist({ list: show.list, listType: 'playlist', index: index,
+            startSeconds: Math.max(0, Math.floor(offset)) });
+        armWatchdog();
+    }
+
+    // A minute or two from one of the breaks, or now and then a theme song or a planet ident.
+    function playBreak(s, seconds) {
+        var r = rnd(s * 13 + Math.floor(now() / 97));
+        current = { kind: 'break', slot: s, until: now() + Math.min(seconds, 150) };
+        tell('فواصل سبيستون');
+        if (r < 0.15) {
+            player.loadPlaylist({ list: SONGS, listType: 'playlist', index: Math.floor(r * 1000) % 40 });
+        } else if (r < 0.28) {
+            player.loadPlaylist({ list: PLANETS, listType: 'playlist', index: Math.floor(r * 1000) % 20 });
+        } else {
+            var b = BREAKS[Math.floor(r * 1000) % BREAKS.length];
+            var from = Math.floor(rnd(s + 7) * Math.max(0, b.len - 150));
+            player.loadVideoById({ videoId: b.id, startSeconds: from });
+        }
+        armWatchdog();
+    }
+
+    // What comes after: the rest of the slot is break, then the next slot's programme.
+    function next() {
+        var t = now();
+        var s = slotOf(t);
+        if (current && current.kind === 'break' && t < current.until && current.slot === s) return;
+        if (current && current.kind === 'show' && current.slot === s) {
+            var left = slotStart(s + 1) - t;
+            if (left > 20) { playBreak(s, left); return; }
+        }
+        tuneToClock();
+    }
+
+    // A video that will not play here: try the next one in its list, then something else.
+    function skip() {
+        fails++;
+        if (fails > 12) { fails = 0; setTimeout(tuneToClock, 30000); return; }
+        if (current && current.kind === 'show') {
+            if (current.tries < 3) {
+                try { player.nextVideo(); armWatchdog(); return; } catch (e) { /* fall through */ }
+            }
+            playShow(current.slot, 0, current.tries + 1);
+        } else {
+            playBreak(slotOf(now()) + fails, 90);
+        }
+    }
+
+    function armWatchdog() {
+        clearTimeout(watchdog);
+        watchdog = setTimeout(function () {
+            var st = player.getPlayerState ? player.getPlayerState() : -1;
+            if (st !== 1 && st !== 3) skip();
+        }, 20000);
+    }
+
+    // Breaks end on time even when the video goes on.
+    setInterval(function () {
+        if (!ready || !current) return;
+        if (current.kind === 'break' && now() >= current.until) next();
+        if (current.kind === 'show' && slotOf(now()) > current.slot + 2) tuneToClock();
+    }, 1000);
+
+    window.onYouTubeIframeAPIReady = function () {
+        player = new YT.Player('player', {
+            width: '100%', height: '100%',
+            host: 'https://www.youtube-nocookie.com',
+            playerVars: { autoplay: 1, controls: 0, disablekb: 1, fs: 0, rel: 0, iv_load_policy: 3,
+                modestbranding: 1, playsinline: 1, cc_load_policy: 0, origin: location.origin },
+            events: {
+                onReady: function () {
+                    ready = true;
+                    try { player.unMute(); player.setVolume(100); } catch (e) { /* fine */ }
+                    tuneToClock();
+                },
+                onStateChange: function (e) {
+                    if (e.data === YT.PlayerState.PLAYING) { fails = 0; clearTimeout(watchdog); }
+                    if (e.data === YT.PlayerState.CUED && current && current.cueing) {
+                        var list = player.getPlaylist() || [];
+                        if (list.length) {
+                            lengths[current.list] = list.length;
+                            saveLengths();
+                            var c = current.cueing;
+                            current.cueing = null;
+                            playShow(c.s, c.offset, current.tries);
+                        }
+                    }
+                    if (e.data === YT.PlayerState.ENDED) next();
+                },
+                onError: function () { skip(); }
+            }
+        });
+    };
+
+    var tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+})();
+</script>
+</body>
+</html>
